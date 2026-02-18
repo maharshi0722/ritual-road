@@ -6,29 +6,32 @@ import * as THREE from "three";
 
 /* ================= CONFIG ================= */
 
-const CW = 4.8;
+const CW = 4.2;
 const CH = 3.6;
 const SEG = 9;
 const POOL = 10;
-const SPEED = 4.5;
+const SPEED = 5;
+
+/* images + names */
 
 const IMAGES = [
-  "/images/IMG_8007.JPG",
-  "/images/IMG_8008.JPG",
-  "/images/IMG_8009.JPG",
-  "/images/IMG_8010.JPG",
-  "/images/IMG_8011.JPG",
-  "/images/IMG_8012.JPG",
-  "/images/IMG_8013.JPG",
-  "/images/IMG_8014.JPG",
-  "/images/IMG_8015.JPG",
-  "/images/IMG_8016.JPG",
-  "/images/IMG_8017.JPG",
-  "/images/IMG_8018.JPG",
-  "/images/IMG_8019.JPG",
+  { src: "/images/JOSH.JPG", name: "JOSH" },
+  { src: "/images/JEZ.JPG", name: "JEZ" },
+  { src: "/images/DUNKEN.JPG", name: "DUNKEN" },
+  { src: "/images/STEFAN.JPG", name: "STEFAN" },
+  { src: "/images/BUNSDEV.JPG", name: "BUNSDEV" },
+  { src: "/images/ELIF.JPG", name: "ELIF" },
+  { src: "/images/CLARIE.JPG", name: "CLARIE" },
+  { src: "/images/FLASH.JPG", name: "FLASH" },
+  { src: "/images/MAJORPROJECT.JPG", name: "MAJORPROJECT" },
+  { src: "/images/MEISON.JPG", name: "MEISON" },
+  { src: "/images/WHITESOCK.JPG", name: "WHITESOCK" },
+  { src: "/images/ERIC.JPG", name: "ERIC" },
+  { src: "/images/KASH.JPG", name: "KASH" },
+  { src: "/images/HINATA.JPG", name: "HINATA" },
 ];
 
-/* ================= TEXTURE HOOK ================= */
+/* ================= TEXTURES ================= */
 
 const loader = new THREE.TextureLoader();
 const cache = new Map();
@@ -52,22 +55,87 @@ function useTexture(url) {
   return tex;
 }
 
+/* ================= LABEL ================= */
+
+function makeLabelTexture(text) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 140;
+
+  const ctx = c.getContext("2d");
+
+  // Light blue gradient background
+  const gradient = ctx.createLinearGradient(0, 0, 0, c.height);
+  gradient.addColorStop(0, "rgba(220, 235, 255, 0.95)");
+  gradient.addColorStop(1, "rgba(200, 220, 245, 0.95)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, c.width, c.height);
+
+  // Blue accent border
+  ctx.strokeStyle = "rgba(100, 150, 220, 0.6)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(1.5, 1.5, c.width - 3, c.height - 3);
+
+  // Dark blue text
+  ctx.fillStyle = "#2c4a6e";
+  ctx.font = "600 36px Segoe UI";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, c.width / 2, c.height / 2);
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 /* ================= FRAME ================= */
 
-function Frame({ pos, rotY, img }) {
-  const tex = useTexture(img);
-  if (!tex) return null;
+function Frame({ pos, rotY, imgSrc, title }) {
+  const tex = useTexture(imgSrc);
+  const [label, setLabel] = useState(null);
+  const meshRef = useRef();
+
+  useEffect(() => {
+    setLabel(makeLabelTexture(title));
+  }, [title]);
+
+  // Subtle animation
+  useFrame((state) => {
+    if (meshRef.current) {
+      meshRef.current.position.y = pos[1] + Math.sin(state.clock.elapsedTime * 0.5) * 0.02;
+    }
+  });
+
+  if (!tex || !label) return null;
 
   return (
-    <group position={pos} rotation={[0, rotY, 0]}>
-      <mesh>
-        <boxGeometry args={[1.4, 1.8, 0.12]} />
-        <meshStandardMaterial color="#ffffff" roughness={0.4} />
+    <group ref={meshRef} position={pos} rotation={[0, rotY, 0]}>
+      {/* Light blue-tinted silver frame */}
+      <mesh castShadow>
+        <boxGeometry args={[1.6, 2.0, 0.15]} />
+        <meshStandardMaterial 
+          color="#c5d5e8"
+          metalness={0.4}
+          roughness={0.5}
+        />
       </mesh>
 
-      <mesh position={[0, 0, 0.07]}>
-        <planeGeometry args={[1.2, 1.6]} />
-        <meshBasicMaterial map={tex} toneMapped={false} />
+      {/* Bright white mat */}
+      <mesh position={[0, 0, 0.075]}>
+        <boxGeometry args={[1.45, 1.85, 0.02]} />
+        <meshStandardMaterial color="#ffffff" />
+      </mesh>
+
+      {/* Image */}
+      <mesh position={[0, 0.12, 0.09]}>
+        <planeGeometry args={[1.3, 1.5]} />
+        <meshBasicMaterial map={tex} />
+      </mesh>
+
+      {/* Label */}
+      <mesh position={[0, -0.82, 0.1]}>
+        <planeGeometry args={[1.3, 0.32]} />
+        <meshBasicMaterial map={label} transparent />
       </mesh>
     </group>
   );
@@ -78,58 +146,123 @@ function Frame({ pos, rotY, img }) {
 function Segment({ z, left, right, setRef }) {
   const hw = CW / 2;
   const hh = CH / 2;
-  const frameZ = -SEG / 2 + 1.8;
+
+  // Frames closer to viewer
+  const frameZ = -SEG / 2 + 4.8;
 
   return (
     <group ref={setRef} position={[0, 0, z]}>
-      {/* walls */}
-      <mesh position={[-hw, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+      {/* Left wall - light blue-gray */}
+      <mesh position={[-hw, 0, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[SEG, CH]} />
-        <meshStandardMaterial color="#faf7f2" roughness={0.9} />
-      </mesh>
-
-      <mesh position={[hw, 0, 0]} rotation={[0, -Math.PI / 2, 0]}>
-        <planeGeometry args={[SEG, CH]} />
-        <meshStandardMaterial color="#f7f4ef" roughness={0.9} />
-      </mesh>
-
-      {/* ceiling */}
-      <mesh position={[0, hh, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[CW, SEG]} />
-        <meshStandardMaterial color="#f9f7f3" />
-      </mesh>
-
-      {/* ceiling light */}
-      <mesh position={[0, hh - 0.02, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[1.6, SEG]} />
-        <meshStandardMaterial
-          color="#fff6e6"
-          emissive="#fff6e6"
-          emissiveIntensity={0.7}
-          toneMapped={false}
+        <meshStandardMaterial 
+          color="#d8e4f0"
+          roughness={0.8}
         />
       </mesh>
 
-      {/* floor */}
-      <mesh position={[0, -hh, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[CW, SEG]} />
-        <meshStandardMaterial color="#e0d8ce" />
+      {/* Right wall - light blue-gray */}
+      <mesh position={[hw, 0, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
+        <planeGeometry args={[SEG, CH]} />
+        <meshStandardMaterial 
+          color="#d8e4f0"
+          roughness={0.8}
+        />
       </mesh>
 
-      {/* carpet */}
+      {/* Ceiling - bright sky blue */}
+      <mesh position={[0, hh, 0]} rotation={[Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[CW, SEG]} />
+        <meshStandardMaterial 
+          color="#e8f2ff"
+          roughness={0.7}
+        />
+      </mesh>
+
+      {/* Floor - light blue-tinted white */}
+      <mesh position={[0, -hh, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+        <planeGeometry args={[CW, SEG]} />
+        <meshStandardMaterial 
+          color="#e5eef8"
+          roughness={0.85}
+        />
+      </mesh>
+
+      {/* Coral/salmon carpet center - warm accent */}
       <mesh position={[0, -hh + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[1.3, SEG]} />
-        <meshStandardMaterial
-          color="#b81d1d"
-          emissive="#6a0000"
+        <planeGeometry args={[1.1, SEG]} />
+        <meshStandardMaterial 
+          color="#ff8a80"
+          roughness={0.75}
+          emissive="#ff6b60"
+          emissiveIntensity={0.15}
+        />
+      </mesh>
+
+      {/* Bright cyan/turquoise stripes - left */}
+      <mesh position={[-0.62, -hh + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.08, SEG]} />
+        <meshStandardMaterial 
+          color="#4dd0e1"
+          roughness={0.5}
+          emissive="#26c6da"
           emissiveIntensity={0.25}
         />
       </mesh>
 
-      <pointLight position={[0, hh - 0.3, 0]} intensity={20} />
+      {/* Bright cyan/turquoise stripes - right */}
+      <mesh position={[0.62, -hh + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.08, SEG]} />
+        <meshStandardMaterial 
+          color="#4dd0e1"
+          roughness={0.5}
+          emissive="#26c6da"
+          emissiveIntensity={0.25}
+        />
+      </mesh>
 
-      <Frame pos={[-hw + 0.06, 0.3, frameZ]} rotY={Math.PI / 2} img={left} />
-      <Frame pos={[hw - 0.06, 0.3, frameZ]} rotY={-Math.PI / 2} img={right} />
+      {/* Left frame */}
+      <Frame
+        pos={[-hw + 0.08, 0.35, frameZ]}
+        rotY={Math.PI / 2}
+        imgSrc={left.src}
+        title={left.name}
+      />
+
+      {/* Right frame */}
+      <Frame
+        pos={[hw - 0.08, 0.35, frameZ]}
+        rotY={-Math.PI / 2}
+        imgSrc={right.src}
+        title={right.name}
+      />
+    </group>
+  );
+}
+
+/* ================= CEILING LIGHTS ================= */
+
+function CeilingLight({ position }) {
+  return (
+    <group position={position}>
+      {/* Light fixture - bright blue-white glow */}
+      <mesh>
+        <boxGeometry args={[0.6, 0.08, 1.2]} />
+        <meshStandardMaterial 
+          color="#e8f4ff"
+          emissive="#d0e8ff"
+          emissiveIntensity={0.8}
+        />
+      </mesh>
+      
+      {/* Point light - cool blue-white */}
+      <pointLight 
+        position={[0, -0.2, 0]} 
+        intensity={1.8} 
+        distance={9} 
+        color="#e8f4ff"
+        decay={2}
+      />
     </group>
   );
 }
@@ -140,7 +273,7 @@ function Scene() {
   const { camera } = useThree();
   const refs = useRef([]);
   const pos = useRef(Array.from({ length: POOL }, (_, i) => -(i * SEG + SEG / 2)));
-  const camZ = useRef(-2);
+  const camZ = useRef(-1.2);
 
   const pairs = IMAGES.map((_, i) => ({
     L: IMAGES[(i * 2) % IMAGES.length],
@@ -158,8 +291,8 @@ function Scene() {
       if (!g) continue;
 
       if (pos.current[i] + SEG / 2 > recycle) {
-        const min = Math.min(...pos.current);
-        pos.current[i] = min - SEG;
+        const m = Math.min(...pos.current);
+        pos.current[i] = m - SEG;
         g.position.z = pos.current[i];
       }
     }
@@ -167,47 +300,58 @@ function Scene() {
 
   return (
     <>
-     <fog attach="fog" args={["#f4efe8", 8, 55]} />
-
-{/* soft base light */}
-<ambientLight intensity={0.45} />
-
-{/* main overhead light */}
-<directionalLight
-  position={[0, 6, -4]}
-  intensity={0.9}
-  color="#fff3e0"
-/>
-
-{/* left wall wash */}
-<pointLight
-  position={[-3, 1.5, -4]}
-  intensity={8}
-  color="#fff0dd"
-/>
-
-{/* right wall wash */}
-<pointLight
-  position={[3, 1.5, -4]}
-  intensity={8}
-  color="#fff0dd"
-/>
-
-{/* subtle back glow */}
-<pointLight
-  position={[0, 1, 3]}
-  intensity={4}
-  color="#ffd8c0"
-/>
-
-
+      {/* Light blue fog */}
+      <fog attach="fog" args={["#d8e8f8", 12, 58]} />
+      
+      {/* Bright ambient light with blue tint */}
+      <ambientLight intensity={0.85} color="#f0f8ff" />
+      
+      {/* Ceiling lights array */}
+      {Array.from({ length: 15 }, (_, i) => (
+        <CeilingLight key={i} position={[0, CH / 2 - 0.05, -i * SEG / 2 + 10]} />
+      ))}
+      
+      {/* Blue accent lights on walls */}
+      <spotLight 
+        position={[-CW/2 + 0.5, 1.5, 0]} 
+        intensity={0.8}
+        angle={0.5}
+        penumbra={0.5}
+        distance={7}
+        color="#a8d8ff"
+      />
+      <spotLight 
+        position={[CW/2 - 0.5, 1.5, 0]} 
+        intensity={0.8}
+        angle={0.5}
+        penumbra={0.5}
+        distance={7}
+        color="#a8d8ff"
+      />
+      
+      {/* Bright directional light */}
+      <directionalLight 
+        position={[2, 6, 3]} 
+        intensity={1.0}
+        color="#ffffff"
+        castShadow
+      />
+      
+      {/* Additional blue fill light */}
+      <pointLight 
+        position={[0, 2, -5]} 
+        intensity={0.5}
+        distance={15}
+        color="#b8e0ff"
+      />
+      
       {pairs.slice(0, POOL).map((p, i) => (
-        <Segment
-          key={i}
-          z={pos.current[i]}
-          left={p.L}
-          right={p.R}
-          setRef={el => (refs.current[i] = el)}
+        <Segment 
+          key={i} 
+          z={pos.current[i]} 
+          left={p.L} 
+          right={p.R} 
+          setRef={e => (refs.current[i] = e)} 
         />
       ))}
     </>
@@ -218,12 +362,14 @@ function Scene() {
 
 export default function Page() {
   return (
-    <main style={{ width: "100vw", height: "100vh", background: "#f4efe8" }}>
-      <Canvas camera={{ position: [0, 0.2, 2], fov: 65 }}>
+    <main style={{ width: "100vw", height: "100vh", background: "#d0e4f5" }}>
+      <Canvas 
+        camera={{ position: [0, 0.3, 2], fov: 68 }}
+        shadows
+      >
         <Scene />
       </Canvas>
 
-      {/* UI HERO */}
       <div
         style={{
           position: "fixed",
@@ -232,17 +378,39 @@ export default function Page() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          transform: "translateY(-280px)",
+          transform: "translateY(-260px)",
           pointerEvents: "none",
+          textShadow: "0 2px 10px rgba(100, 150, 220, 0.4), 0 0 30px rgba(200, 230, 255, 0.6)",
         }}
       >
-        <img src="/images/logo.png" style={{ width: 70, marginBottom: 12 }} />
-
-        <h1 style={{ letterSpacing: "0.35em", fontWeight: 300, color: "#222" }}>
+        <img 
+          src="/images/logo.png" 
+          style={{ 
+            width: 70, 
+            marginBottom: 10,
+          }} 
+          alt="Ritual Net Logo"
+        />
+        <h1 
+          style={{ 
+            letterSpacing: ".35em", 
+            fontWeight: 300,
+            margin: "8px 0",
+            fontSize: "2rem",
+            color: "#2c5080",
+            textTransform: "uppercase"
+          }}
+        >
           RITUAL NET
         </h1>
-
-        <p style={{ marginTop: 6, color: "#666", fontSize: "0.7rem", letterSpacing: "0.2em" }}>
+        <p 
+          style={{ 
+            fontSize: 11, 
+            letterSpacing: ".2em",
+            opacity: 0.85,
+            color: "#3d6090"
+          }}
+        >
           Sovereign AI Corridor
         </p>
       </div>

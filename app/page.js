@@ -18,6 +18,24 @@ const SPEED_EASE = 0.9;
 const IMAGE_COUNT = 102;
 const IMAGE_EXT = "png";
 
+/* images + names (FIRST) */
+const IMAGES = [
+  { src: "/images/JOSH.JPG", name: "JOSH" },
+  { src: "/images/JEZ.JPG", name: "JEZ" },
+  { src: "/images/DUNKEN.JPG", name: "DUNKEN" },
+  { src: "/images/STEFAN.JPG", name: "STEFAN" },
+  { src: "/images/BUNSDEV.JPG", name: "BUNSDEV" },
+  { src: "/images/ELIF.JPG", name: "ELIF" },
+  { src: "/images/CLARIE.JPG", name: "CLARIE" },
+  { src: "/images/FLASH.JPG", name: "FLASH" },
+  { src: "/images/MAJORPROJECT.JPG", name: "MAJORPROJECT" },
+  { src: "/images/MEISON.JPG", name: "MEISON" },
+  { src: "/images/WHITESOCK.JPG", name: "WHITESOCK" },
+  { src: "/images/ERIC.JPG", name: "ERIC" },
+  { src: "/images/KASH.JPG", name: "KASH" },
+  { src: "/images/HINATA.JPG", name: "HINATA" },
+];
+
 /* ================= UTIL ================= */
 
 function usePrefersReducedMotion() {
@@ -48,17 +66,25 @@ function pad3(n) {
   return String(n).padStart(3, "0");
 }
 
-/* ================= IMAGES (PUBLIC ROOT: /1.png ... /102.png) ================= */
+/* ================= IMAGES (named first, then /1.png ... /102.png) ================= */
 
-function buildImages(count) {
-  return Array.from({ length: count }, (_, i) => {
-    const id = i + 1;
+function buildAllImages(numberedCount) {
+  const named = IMAGES.map((img, idx) => ({
+    id: idx + 1,
+    src: img.src,
+    label: img.name,
+  }));
+
+  const numbered = Array.from({ length: numberedCount }, (_, i) => {
+    const n = i + 1;
     return {
-      id,
-      src: `/${id}.${IMAGE_EXT}`,
-      label: `#${pad3(id)}`,
+      id: named.length + n,
+      src: `/${n}.${IMAGE_EXT}`,
+      label: `#${pad3(n)}`,
     };
   });
+
+  return [...named, ...numbered];
 }
 
 /* ================= TEXTURES ================= */
@@ -247,11 +273,7 @@ function Segment({ z, left, right, setRef, CW, CH, reducedMotion }) {
         receiveShadow
       >
         <planeGeometry args={[SEG, CH]} />
-        <meshStandardMaterial
-          color="#f9fbff"
-          roughness={0.78}
-          metalness={0.04}
-        />
+        <meshStandardMaterial color="#f9fbff" roughness={0.78} metalness={0.04} />
       </mesh>
 
       <mesh
@@ -260,11 +282,7 @@ function Segment({ z, left, right, setRef, CW, CH, reducedMotion }) {
         receiveShadow
       >
         <planeGeometry args={[SEG, CH]} />
-        <meshStandardMaterial
-          color="#f9fbff"
-          roughness={0.78}
-          metalness={0.04}
-        />
+        <meshStandardMaterial color="#f9fbff" roughness={0.78} metalness={0.04} />
       </mesh>
 
       <mesh
@@ -282,11 +300,7 @@ function Segment({ z, left, right, setRef, CW, CH, reducedMotion }) {
         receiveShadow
       >
         <planeGeometry args={[CW, SEG]} />
-        <meshStandardMaterial
-          color="#f6f8fc"
-          roughness={0.85}
-          metalness={0.08}
-        />
+        <meshStandardMaterial color="#f6f8fc" roughness={0.85} metalness={0.08} />
       </mesh>
 
       <mesh position={[0, -hh + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -431,7 +445,7 @@ function TopNav() {
     <div className="topNav">
       <div className="topNavCard">
         <img className="navLogo" src="/logo.png" alt="Logo" />
-        <div className="navTitle" >RITUALIST CORRIDOR</div>
+        <div className="navTitle">RITUALIST CORRIDOR</div>
       </div>
     </div>
   );
@@ -478,7 +492,8 @@ function Scene({ reducedMotion, paused, speed }) {
   const camZ = useRef(-1.2);
   const speedRef = useRef(0);
 
-  const images = useMemo(() => buildImages(IMAGE_COUNT), []);
+  // includes IMAGES first, then numbered files
+  const images = useMemo(() => buildAllImages(IMAGE_COUNT), []);
   const segIndex = useRef(Array.from({ length: POOL }, (_, i) => i));
 
   const device = useMemo(() => {
@@ -582,7 +597,6 @@ function Scene({ reducedMotion, paused, speed }) {
       <pointLight position={[0, 1, -10]} intensity={0.42} distance={20} color="#d6ebff" />
       <pointLight position={[0, 0.5, 5]} intensity={0.28} distance={15} color="#fff8f0" />
 
-      {/* IMPORTANT: render segments using segIndex so images progress */}
       {Array.from({ length: POOL }, (_, i) => {
         const idx = segIndex.current[i];
         const left = images[(idx * 2) % images.length];
@@ -677,7 +691,7 @@ export default function Page() {
         /* ===== Top navbar ===== */
         .topNav {
           position: fixed;
-          top: 16px;
+          top: max(10px, env(safe-area-inset-top));
           left: 50%;
           transform: translateX(-50%);
           z-index: 10;
@@ -704,29 +718,30 @@ export default function Page() {
         }
 
         .navLogo {
-          width: 42px;
-          height: 42px;
+          width: clamp(42px, 8vw, 64px);
+          height: clamp(42px, 8vw, 64px);
           object-fit: contain;
           filter: drop-shadow(0 10px 22px rgba(21, 31, 54, 0.12));
           flex: 0 0 auto;
         }
 
         .navTitle {
-          font-weight: 800;
-          letter-spacing: 0.34em;
+          font-weight: 900;
+          letter-spacing: 0.24em;
           text-transform: uppercase;
-          font-size: clamp(14px, 2.1vw, 18px);
+          font-size: clamp(18px, 4.2vw, 22px);
           background: linear-gradient(135deg, #667eea, #9a7cff, #f093fb);
           background-size: 220% 220%;
           -webkit-background-clip: text;
           background-clip: text;
           -webkit-text-fill-color: transparent;
+          line-height: 1.1;
         }
 
         /* ===== Bottom controls ===== */
         .bottomControls {
           position: fixed;
-          bottom: 16px;
+          bottom: calc(12px + env(safe-area-inset-bottom));
           left: 50%;
           transform: translateX(-50%);
           z-index: 10;
@@ -757,7 +772,7 @@ export default function Page() {
             rgba(240, 147, 251, 0.2)
           );
           color: var(--text);
-          font-weight: 800;
+          font-weight: 900;
           letter-spacing: 0.08em;
           text-transform: uppercase;
           padding: 10px 12px;
@@ -765,6 +780,7 @@ export default function Page() {
           cursor: pointer;
           box-shadow: 0 10px 26px rgba(21, 31, 54, 0.12);
           justify-self: center;
+          min-width: 120px;
         }
 
         .sliderRow {
@@ -792,6 +808,7 @@ export default function Page() {
         .slider {
           width: 100%;
           accent-color: #9a7cff;
+          height: 28px;
         }
 
         .hint {
@@ -800,6 +817,40 @@ export default function Page() {
           font-size: 12px;
           line-height: 1.35;
           text-align: center;
+        }
+
+        /* ===== Mobile refinements ===== */
+        @media (max-width: 520px) {
+          .topNavCard {
+            padding: 12px 14px;
+            gap: 12px;
+            border-radius: 16px;
+          }
+
+          .navTitle {
+            font-size: clamp(18px, 5.2vw, 24px);
+            letter-spacing: 0.18em;
+          }
+
+          .bottomControlsCard {
+            padding: 12px 14px;
+            border-radius: 16px;
+          }
+
+          .btn {
+            width: 100%;
+            min-width: 0;
+            padding: 13px 12px;
+            font-size: 13px;
+          }
+
+          .sliderMeta {
+            font-size: 12px;
+          }
+
+          .slider {
+            height: 38px;
+          }
         }
 
         @media (prefers-reduced-motion: reduce) {

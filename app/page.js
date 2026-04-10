@@ -431,7 +431,7 @@ function TopNav() {
     <div className="topNav">
       <div className="topNavCard">
         <img className="navLogo" src="/logo.png" alt="Logo" />
-        <div className="navTitle">RITUALIST CORRIDOR</div>
+        <div className="navTitle" >RITUALIST CORRIDOR</div>
       </div>
     </div>
   );

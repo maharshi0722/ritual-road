@@ -1,35 +1,65 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useMemo, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 
 /* ================= CONFIG ================= */
 
-const CW = 4.2;
-const CH = 3.6;
 const SEG = 9;
 const POOL = 10;
-const SPEED = 5;
 
-/* images + names */
+const BASE_CW = 4.2;
+const BASE_CH = 3.6;
 
-const IMAGES = [
-  { src: "/images/JOSH.JPG", name: "JOSH" },
-  { src: "/images/JEZ.JPG", name: "JEZ" },
-  { src: "/images/DUNKEN.JPG", name: "DUNKEN" },
-  { src: "/images/STEFAN.JPG", name: "STEFAN" },
-  { src: "/images/BUNSDEV.JPG", name: "BUNSDEV" },
-  { src: "/images/ELIF.JPG", name: "ELIF" },
-  { src: "/images/CLARIE.JPG", name: "CLARIE" },
-  { src: "/images/FLASH.JPG", name: "FLASH" },
-  { src: "/images/MAJORPROJECT.JPG", name: "MAJORPROJECT" },
-  { src: "/images/MEISON.JPG", name: "MEISON" },
-  { src: "/images/WHITESOCK.JPG", name: "WHITESOCK" },
-  { src: "/images/ERIC.JPG", name: "ERIC" },
-  { src: "/images/KASH.JPG", name: "KASH" },
-  { src: "/images/HINATA.JPG", name: "HINATA" },
-];
+const BASE_SPEED = 5;
+const SPEED_EASE = 0.9;
+
+const IMAGE_COUNT = 102;
+const IMAGE_EXT = "png";
+
+/* ================= UTIL ================= */
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduced(!!mq.matches);
+
+    update();
+    if (mq.addEventListener) mq.addEventListener("change", update);
+    else mq.addListener(update);
+
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", update);
+      else mq.removeListener(update);
+    };
+  }, []);
+
+  return reduced;
+}
+
+function clamp(n, a, b) {
+  return Math.max(a, Math.min(b, n));
+}
+
+function pad3(n) {
+  return String(n).padStart(3, "0");
+}
+
+/* ================= IMAGES (PUBLIC ROOT: /1.png ... /102.png) ================= */
+
+function buildImages(count) {
+  return Array.from({ length: count }, (_, i) => {
+    const id = i + 1;
+    return {
+      id,
+      src: `/${id}.${IMAGE_EXT}`,
+      label: `#${pad3(id)}`,
+    };
+  });
+}
 
 /* ================= TEXTURES ================= */
 
@@ -40,144 +70,162 @@ function useTexture(url) {
   const [tex, setTex] = useState(null);
 
   useEffect(() => {
-    if (cache.has(url)) return setTex(cache.get(url));
+    if (!url) return;
 
-    loader.load(url, t => {
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.flipY = false;
-      t.rotation = Math.PI;
-      t.center.set(0.5, 0.5);
-      cache.set(url, t);
-      setTex(t);
-    });
+    if (cache.has(url)) {
+      setTex(cache.get(url));
+      return;
+    }
+
+    loader.load(
+      url,
+      (t) => {
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.flipY = false;
+        t.rotation = Math.PI;
+        t.center.set(0.5, 0.5);
+
+        t.generateMipmaps = true;
+        t.minFilter = THREE.LinearMipmapLinearFilter;
+        t.magFilter = THREE.LinearFilter;
+        t.anisotropy = 8;
+
+        cache.set(url, t);
+        setTex(t);
+      },
+      undefined,
+      () => setTex(null)
+    );
   }, [url]);
 
   return tex;
 }
 
-/* ================= LABEL ================= */
+/* ================= LABEL TEXTURE ================= */
 
 function makeLabelTexture(text) {
   const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 140;
+  c.width = 768;
+  c.height = 170;
 
   const ctx = c.getContext("2d");
+  if (!ctx) return null;
 
-  // Premium glass morphism background
-  const gradient = ctx.createLinearGradient(0, 0, 0, c.height);
-  gradient.addColorStop(0, "rgba(255, 255, 255, 0.95)");
-  gradient.addColorStop(1, "rgba(245, 248, 255, 0.92)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.clearRect(0, 0, c.width, c.height);
 
-  // Premium border with gradient
-  const borderGradient = ctx.createLinearGradient(0, 0, c.width, c.height);
-  borderGradient.addColorStop(0, "rgba(100, 180, 255, 0.7)");
-  borderGradient.addColorStop(0.5, "rgba(150, 100, 255, 0.7)");
-  borderGradient.addColorStop(1, "rgba(100, 180, 255, 0.7)");
-  ctx.strokeStyle = borderGradient;
+  const bg = ctx.createLinearGradient(0, 0, c.width, c.height);
+  bg.addColorStop(0, "rgba(255,255,255,0.92)");
+  bg.addColorStop(1, "rgba(245,248,255,0.86)");
+  ctx.fillStyle = bg;
+
+  const r = 26;
+  const x = 10,
+    y = 14,
+    w = c.width - 20,
+    h = c.height - 28;
+
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+  ctx.fill();
+
+  const stroke = ctx.createLinearGradient(x, y, x + w, y + h);
+  stroke.addColorStop(0, "rgba(79,172,254,0.80)");
+  stroke.addColorStop(0.5, "rgba(154,124,255,0.80)");
+  stroke.addColorStop(1, "rgba(240,147,251,0.80)");
+  ctx.strokeStyle = stroke;
   ctx.lineWidth = 4;
-  ctx.strokeRect(2, 2, c.width - 4, c.height - 4);
+  ctx.stroke();
 
-  // Elegant dark text with premium font - BETTER SPACING
-  const textGradient = ctx.createLinearGradient(0, 0, 0, c.height);
-  textGradient.addColorStop(0, "#1a2a4a");
-  textGradient.addColorStop(1, "#2a3a5a");
-  ctx.fillStyle = textGradient;
-  ctx.font = "700 42px 'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif";
+  ctx.font =
+    "800 64px 'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  
-  // Better letter spacing
-  const letters = text.split('');
-  const spacing = 8; // pixels between letters
-  const totalWidth = letters.reduce((w, letter) => w + ctx.measureText(letter).width + spacing, 0) - spacing;
-  let x = (c.width - totalWidth) / 2;
-  
-  letters.forEach(letter => {
-    ctx.fillText(letter, x, c.height / 2);
-    x += ctx.measureText(letter).width + spacing;
-  });
+
+  const tg = ctx.createLinearGradient(0, y, 0, y + h);
+  tg.addColorStop(0, "#14213b");
+  tg.addColorStop(1, "#2d3f6f");
+  ctx.fillStyle = tg;
+
+  ctx.fillText(String(text || ""), c.width / 2, c.height / 2 + 2);
 
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  t.needsUpdate = true;
   return t;
 }
 
 /* ================= FRAME ================= */
 
-function Frame({ pos, rotY, imgSrc, title }) {
+function Frame({ pos, rotY, imgSrc, labelText, reducedMotion }) {
   const tex = useTexture(imgSrc);
   const [label, setLabel] = useState(null);
-  const meshRef = useRef();
-  const glowRef = useRef();
+  const groupRef = useRef(null);
+  const glowRef = useRef(null);
 
   useEffect(() => {
-    setLabel(makeLabelTexture(title));
-  }, [title]);
+    setLabel(makeLabelTexture(labelText));
+  }, [labelText]);
 
-  // Elegant floating animation with glow pulse
   useFrame((state) => {
-    if (meshRef.current) {
-      const time = state.clock.elapsedTime;
-      meshRef.current.position.y = pos[1] + Math.sin(time * 0.5) * 0.03;
-      
-      if (glowRef.current) {
-        glowRef.current.scale.setScalar(1 + Math.sin(time * 2) * 0.02);
-      }
+    if (!groupRef.current) return;
+    if (reducedMotion) return;
+
+    const t = state.clock.elapsedTime;
+    groupRef.current.position.y = pos[1] + Math.sin(t * 0.55) * 0.035;
+    groupRef.current.rotation.z = Math.sin(t * 0.35) * 0.01;
+
+    if (glowRef.current) {
+      const s = 1 + Math.sin(t * 2.2) * 0.03;
+      glowRef.current.scale.setScalar(s);
     }
   });
 
   if (!tex || !label) return null;
 
   return (
-    <group ref={meshRef} position={pos} rotation={[0, rotY, 0]}>
-      {/* Ambient glow behind frame */}
-      <mesh ref={glowRef} position={[0, 0, -0.1]}>
-        <planeGeometry args={[2.2, 2.6]} />
-        <meshBasicMaterial 
-          color="#a8d0ff"
-          transparent
-          opacity={0.15}
-        />
+    <group ref={groupRef} position={pos} rotation={[0, rotY, 0]}>
+      <mesh ref={glowRef} position={[0, 0, -0.25]}>
+        <planeGeometry args={[2.35, 2.85]} />
+        <meshBasicMaterial color="#b8d7ff" transparent opacity={0.12} />
       </mesh>
 
-      {/* Premium champagne gold frame */}
       <mesh castShadow receiveShadow>
-        <boxGeometry args={[1.7, 2.1, 0.12]} />
-        <meshStandardMaterial 
-          color="#f5e6d3"
-          metalness={0.7}
-          roughness={0.3}
-          envMapIntensity={1.5}
+        <boxGeometry args={[1.72, 2.14, 0.14]} />
+        <meshStandardMaterial
+          color="#f6eadb"
+          metalness={0.75}
+          roughness={0.28}
+          envMapIntensity={1.6}
         />
       </mesh>
 
-      {/* Pristine white mat with subtle texture */}
-      <mesh position={[0, 0, 0.06]} castShadow>
-        <boxGeometry args={[1.5, 1.9, 0.03]} />
-        <meshStandardMaterial 
-          color="#ffffff"
-          roughness={0.4}
+      <mesh position={[0, 0, 0.085]} castShadow>
+        <boxGeometry args={[1.52, 1.92, 0.03]} />
+        <meshStandardMaterial color="#ffffff" roughness={0.35} />
+      </mesh>
+
+      <mesh position={[0, 0.1, 0.14]}>
+        <planeGeometry args={[1.36, 1.62]} />
+        <meshBasicMaterial
+          map={tex}
+          polygonOffset
+          polygonOffsetFactor={-2}
+          polygonOffsetUnits={-2}
         />
       </mesh>
 
-      {/* Image with subtle border */}
-      <mesh position={[0, 0.1, 0.08]}>
-        <planeGeometry args={[1.35, 1.6]} />
-        <meshBasicMaterial map={tex} />
+      <mesh position={[0, -0.72, 0.155]}>
+        <planeGeometry args={[1.36, 0.012]} />
+        <meshBasicMaterial color="#d7dff0" />
       </mesh>
 
-      {/* Thin elegant separator line */}
-      <mesh position={[0, -0.72, 0.09]}>
-        <planeGeometry args={[1.35, 0.01]} />
-        <meshBasicMaterial color="#d0d8e8" />
-      </mesh>
-
-      {/* Premium label */}
-      <mesh position={[0, -0.88, 0.095]}>
-        <planeGeometry args={[1.35, 0.35]} />
+      <mesh position={[0, -0.9, 0.165]}>
+        <planeGeometry args={[1.36, 0.36]} />
         <meshBasicMaterial map={label} transparent />
       </mesh>
     </group>
@@ -186,155 +234,148 @@ function Frame({ pos, rotY, imgSrc, title }) {
 
 /* ================= SEGMENT ================= */
 
-function Segment({ z, left, right, setRef }) {
+function Segment({ z, left, right, setRef, CW, CH, reducedMotion }) {
   const hw = CW / 2;
   const hh = CH / 2;
-
   const frameZ = -SEG / 2 + 4.8;
 
   return (
     <group ref={setRef} position={[0, 0, z]}>
-      {/* Left wall - premium light with subtle texture */}
-      <mesh position={[-hw, 0, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
+      <mesh
+        position={[-hw, 0, 0]}
+        rotation={[0, Math.PI / 2, 0]}
+        receiveShadow
+      >
         <planeGeometry args={[SEG, CH]} />
-        <meshStandardMaterial 
-          color="#f8f9fc"
-          roughness={0.75}
-          metalness={0.05}
+        <meshStandardMaterial
+          color="#f9fbff"
+          roughness={0.78}
+          metalness={0.04}
         />
       </mesh>
 
-      {/* Right wall - premium light with subtle texture */}
-      <mesh position={[hw, 0, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
+      <mesh
+        position={[hw, 0, 0]}
+        rotation={[0, -Math.PI / 2, 0]}
+        receiveShadow
+      >
         <planeGeometry args={[SEG, CH]} />
-        <meshStandardMaterial 
-          color="#f8f9fc"
-          roughness={0.75}
-          metalness={0.05}
+        <meshStandardMaterial
+          color="#f9fbff"
+          roughness={0.78}
+          metalness={0.04}
         />
       </mesh>
 
-      {/* Ceiling - bright pristine white */}
-      <mesh position={[0, hh, 0]} rotation={[Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh
+        position={[0, hh, 0]}
+        rotation={[Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
         <planeGeometry args={[CW, SEG]} />
-        <meshStandardMaterial 
-          color="#ffffff"
-          roughness={0.6}
-        />
+        <meshStandardMaterial color="#ffffff" roughness={0.55} />
       </mesh>
 
-      {/* Floor - elegant pearl white */}
-      <mesh position={[0, -hh, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+      <mesh
+        position={[0, -hh, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
         <planeGeometry args={[CW, SEG]} />
-        <meshStandardMaterial 
-          color="#f5f7fa"
-          roughness={0.8}
-          metalness={0.1}
+        <meshStandardMaterial
+          color="#f6f8fc"
+          roughness={0.85}
+          metalness={0.08}
         />
       </mesh>
 
-      {/* Premium gradient carpet - electric blue to purple */}
-      <mesh position={[0, -hh + 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[1.2, SEG]} />
-        <meshStandardMaterial 
-          color="#667eea"
+      <mesh position={[0, -hh + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[1.25, SEG]} />
+        <meshStandardMaterial
+          color="#6b7cff"
           roughness={0.7}
-          emissive="#667eea"
-          emissiveIntensity={0.2}
-          metalness={0.2}
+          emissive="#6b7cff"
+          emissiveIntensity={0.22}
+          metalness={0.18}
         />
       </mesh>
 
-      {/* Glowing accent stripe - left (cyan) */}
-      <mesh position={[-0.68, -hh + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[0.1, SEG]} />
-        <meshStandardMaterial 
+      <mesh position={[-0.7, -hh + 0.014, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.11, SEG]} />
+        <meshStandardMaterial
           color="#4facfe"
-          roughness={0.4}
+          roughness={0.45}
           emissive="#4facfe"
-          emissiveIntensity={0.4}
-          metalness={0.3}
+          emissiveIntensity={0.45}
+          metalness={0.25}
         />
       </mesh>
-
-      {/* Glowing accent stripe - right (pink) */}
-      <mesh position={[0.68, -hh + 0.012, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[0.1, SEG]} />
-        <meshStandardMaterial 
+      <mesh position={[0.7, -hh + 0.014, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.11, SEG]} />
+        <meshStandardMaterial
           color="#f093fb"
-          roughness={0.4}
+          roughness={0.45}
           emissive="#f093fb"
-          emissiveIntensity={0.4}
-          metalness={0.3}
+          emissiveIntensity={0.45}
+          metalness={0.25}
         />
       </mesh>
 
-      {/* Subtle center glow on carpet */}
-      <mesh position={[0, -hh + 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[0.4, SEG]} />
-        <meshBasicMaterial 
-          color="#a8b8ff"
-          transparent
-          opacity={0.15}
-        />
+      <mesh position={[0, -hh + 0.017, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.55, SEG]} />
+        <meshBasicMaterial color="#cdd6ff" transparent opacity={0.1} />
       </mesh>
 
       <Frame
         pos={[-hw + 0.08, 0.35, frameZ]}
         rotY={Math.PI / 2}
         imgSrc={left.src}
-        title={left.name}
+        labelText={left.label}
+        reducedMotion={reducedMotion}
       />
-
       <Frame
         pos={[hw - 0.08, 0.35, frameZ]}
         rotY={-Math.PI / 2}
         imgSrc={right.src}
-        title={right.name}
+        labelText={right.label}
+        reducedMotion={reducedMotion}
       />
     </group>
   );
 }
 
-/* ================= PREMIUM CEILING LIGHTS ================= */
+/* ================= LIGHTS ================= */
 
-function CeilingLight({ position }) {
-  const lightRef = useRef();
+function CeilingLight({ position, reducedMotion }) {
+  const lightRef = useRef(null);
 
   useFrame((state) => {
-    if (lightRef.current) {
-      lightRef.current.intensity = 2.2 + Math.sin(state.clock.elapsedTime * 1.5) * 0.1;
-    }
+    if (!lightRef.current || reducedMotion) return;
+    lightRef.current.intensity =
+      2.15 + Math.sin(state.clock.elapsedTime * 1.6) * 0.12;
   });
 
   return (
     <group position={position}>
-      {/* Modern recessed light fixture */}
       <mesh position={[0, -0.02, 0]}>
         <cylinderGeometry args={[0.35, 0.4, 0.08, 32]} />
-        <meshStandardMaterial 
-          color="#f8f9fc"
-          metalness={0.6}
-          roughness={0.2}
+        <meshStandardMaterial color="#f8f9fc" metalness={0.6} roughness={0.2} />
+      </mesh>
+
+      <mesh position={[0, -0.03, 0]}>
+        <cylinderGeometry args={[0.28, 0.28, 0.02, 32]} />
+        <meshStandardMaterial
+          color="#ffffff"
+          emissive="#ffffff"
+          emissiveIntensity={1.15}
         />
       </mesh>
 
-      {/* Bright LED center */}
-      <mesh position={[0, -0.03, 0]}>
-        <cylinderGeometry args={[0.28, 0.28, 0.02, 32]} />
-        <meshStandardMaterial 
-          color="#ffffff"
-          emissive="#ffffff"
-          emissiveIntensity={1.2}
-        />
-      </mesh>
-      
-      {/* Dynamic point light */}
-      <pointLight 
+      <pointLight
         ref={lightRef}
-        position={[0, -0.3, 0]} 
-        intensity={2.2} 
-        distance={10} 
+        position={[0, -0.32, 0]}
+        intensity={2.15}
+        distance={10}
         color="#ffffff"
         decay={2}
       />
@@ -342,21 +383,128 @@ function CeilingLight({ position }) {
   );
 }
 
+/* ================= RESPONSIVE RIG ================= */
+
+function ResponsiveRig({ reducedMotion }) {
+  const { camera, size } = useThree();
+
+  const device = useMemo(() => {
+    const w = size.width;
+    if (w < 520) return "mobile";
+    if (w < 900) return "tablet";
+    return "desktop";
+  }, [size.width]);
+
+  useEffect(() => {
+    if (device === "mobile") {
+      camera.fov = 74;
+      camera.position.set(0, 0.25, 2.15);
+    } else if (device === "tablet") {
+      camera.fov = 70;
+      camera.position.set(0, 0.28, 2.05);
+    } else {
+      camera.fov = 68;
+      camera.position.set(0, 0.3, 2.0);
+    }
+    camera.updateProjectionMatrix();
+  }, [camera, device]);
+
+  useFrame((state) => {
+    if (reducedMotion) return;
+    const t = state.clock.elapsedTime;
+
+    camera.position.x = Math.sin(t * 0.25) * 0.04;
+    camera.position.y = 0.28 + Math.sin(t * 0.18) * 0.025;
+
+    const baseFov = device === "mobile" ? 74 : device === "tablet" ? 70 : 68;
+    camera.fov = baseFov + Math.sin(t * 0.22) * 0.35;
+    camera.updateProjectionMatrix();
+  });
+
+  return null;
+}
+
+/* ================= TOP NAV + BOTTOM CONTROLS ================= */
+
+function TopNav() {
+  return (
+    <div className="topNav">
+      <div className="topNavCard">
+        <img className="navLogo" src="/logo.png" alt="Logo" />
+        <div className="navTitle">RITUALIST CORRIDOR</div>
+      </div>
+    </div>
+  );
+}
+
+function BottomControls({ paused, onTogglePause, speed, setSpeed, reducedMotion }) {
+  return (
+    <div className="bottomControls">
+      <div className="bottomControlsCard">
+        <button className="btn" type="button" onClick={onTogglePause}>
+          {paused ? "Play" : "Pause"}
+        </button>
+
+        <div className="sliderRow">
+          <div className="sliderMeta">
+            <span>Speed</span>
+            <span className="mono">{speed.toFixed(2)}x</span>
+          </div>
+
+          <input
+            className="slider"
+            type="range"
+            min="0.25"
+            max="2.0"
+            step="0.01"
+            value={speed}
+            onChange={(e) => setSpeed(parseFloat(e.target.value))}
+          />
+        </div>
+
+        {!reducedMotion && <div className="hint">Space = Pause/Play</div>}
+      </div>
+    </div>
+  );
+}
+
 /* ================= SCENE ================= */
 
-function Scene() {
-  const { camera } = useThree();
+function Scene({ reducedMotion, paused, speed }) {
+  const { camera, size, scene } = useThree();
   const refs = useRef([]);
   const pos = useRef(Array.from({ length: POOL }, (_, i) => -(i * SEG + SEG / 2)));
+
   const camZ = useRef(-1.2);
+  const speedRef = useRef(0);
 
-  const pairs = IMAGES.map((_, i) => ({
-    L: IMAGES[(i * 2) % IMAGES.length],
-    R: IMAGES[(i * 2 + 1) % IMAGES.length],
-  }));
+  const images = useMemo(() => buildImages(IMAGE_COUNT), []);
+  const segIndex = useRef(Array.from({ length: POOL }, (_, i) => i));
 
-  useFrame((_, d) => {
-    camZ.current += d * SPEED;
+  const device = useMemo(() => {
+    const w = size.width;
+    if (w < 520) return "mobile";
+    if (w < 900) return "tablet";
+    return "desktop";
+  }, [size.width]);
+
+  const { CW, CH } = useMemo(() => {
+    if (device === "mobile") return { CW: BASE_CW * 0.92, CH: BASE_CH * 0.95 };
+    if (device === "tablet") return { CW: BASE_CW * 0.98, CH: BASE_CH * 1.0 };
+    return { CW: BASE_CW, CH: BASE_CH };
+  }, [device]);
+
+  useFrame((state, d) => {
+    const baseTarget = reducedMotion ? BASE_SPEED * 0.35 : BASE_SPEED;
+    const target = paused ? 0 : baseTarget * speed;
+
+    speedRef.current = THREE.MathUtils.lerp(
+      speedRef.current,
+      target,
+      1 - Math.pow(SPEED_EASE, d * 60)
+    );
+
+    camZ.current += d * speedRef.current;
     camera.position.z = -camZ.current;
 
     const recycle = camera.position.z + SEG * 1.4;
@@ -369,27 +517,34 @@ function Scene() {
         const m = Math.min(...pos.current);
         pos.current[i] = m - SEG;
         g.position.z = pos.current[i];
+
+        // advance this segment's pair index so images don't repeat after 20
+        segIndex.current[i] = segIndex.current[i] + POOL;
       }
+    }
+
+    if (!reducedMotion && scene.fog) {
+      scene.fog.near = 14.5 + Math.sin(state.clock.elapsedTime * 0.12) * 0.8;
+      scene.fog.far = 66 + Math.sin(state.clock.elapsedTime * 0.09) * 1.2;
     }
   });
 
   return (
     <>
-      {/* Subtle atmospheric fog */}
-      <fog attach="fog" args={["#f0f4f8", 15, 65]} />
-      
-      {/* High-key ambient lighting */}
+      <fog attach="fog" args={["#eef4ff", 15, 66]} />
       <ambientLight intensity={1.0} color="#ffffff" />
-      
-      {/* Ceiling lights array */}
-      {Array.from({ length: 15 }, (_, i) => (
-        <CeilingLight key={i} position={[0, CH / 2 - 0.05, -i * SEG / 2 + 10]} />
+
+      {Array.from({ length: 16 }, (_, i) => (
+        <CeilingLight
+          key={i}
+          reducedMotion={reducedMotion}
+          position={[0, CH / 2 - 0.05, -i * SEG * 0.5 + 10]}
+        />
       ))}
-      
-      {/* Key light - main illumination */}
-      <directionalLight 
-        position={[5, 8, 5]} 
-        intensity={1.5}
+
+      <directionalLight
+        position={[5, 8, 5]}
+        intensity={1.55}
         color="#ffffff"
         castShadow
         shadow-mapSize-width={2048}
@@ -400,68 +555,54 @@ function Scene() {
         shadow-camera-top={10}
         shadow-camera-bottom={-10}
       />
-      
-      {/* Fill light - soft shadows */}
-      <directionalLight 
-        position={[-3, 6, -2]} 
-        intensity={0.8}
-        color="#f0f8ff"
-      />
-      
-      {/* Rim light - depth and separation */}
-      <directionalLight 
-        position={[0, 3, -8]} 
-        intensity={0.6}
-        color="#e8f4ff"
-      />
-      
-      {/* Accent lights on frames - left side with color */}
-      <spotLight 
-        position={[-CW/2 + 0.3, 1.8, 0]} 
-        intensity={1.2}
+
+      <directionalLight position={[-3, 6, -2]} intensity={0.85} color="#f0f8ff" />
+      <directionalLight position={[0, 3, -8]} intensity={0.65} color="#e8f4ff" />
+
+      <spotLight
+        position={[-CW / 2 + 0.3, 1.8, 0]}
+        intensity={1.25}
         angle={0.45}
         penumbra={0.6}
         distance={8}
-        color="#c8e0ff"
+        color="#cfe6ff"
         castShadow
-      />
-      
-      {/* Accent lights on frames - right side with color */}
-      <spotLight 
-        position={[CW/2 - 0.3, 1.8, 0]} 
-        intensity={1.2}
-        angle={0.45}
-        penumbra={0.6}
-        distance={8}
-        color="#ffd4e8"
-        castShadow
-      />
-      
-      {/* Subtle blue ambient fill */}
-      <pointLight 
-        position={[0, 1, -10]} 
-        intensity={0.4}
-        distance={20}
-        color="#d0e8ff"
       />
 
-      {/* Warm counter light for balance */}
-      <pointLight 
-        position={[0, 0.5, 5]} 
-        intensity={0.3}
-        distance={15}
-        color="#fff8f0"
+      <spotLight
+        position={[CW / 2 - 0.3, 1.8, 0]}
+        intensity={1.25}
+        angle={0.45}
+        penumbra={0.6}
+        distance={8}
+        color="#ffe0f0"
+        castShadow
       />
-      
-      {pairs.slice(0, POOL).map((p, i) => (
-        <Segment 
-          key={i} 
-          z={pos.current[i]} 
-          left={p.L} 
-          right={p.R} 
-          setRef={e => (refs.current[i] = e)} 
-        />
-      ))}
+
+      <pointLight position={[0, 1, -10]} intensity={0.42} distance={20} color="#d6ebff" />
+      <pointLight position={[0, 0.5, 5]} intensity={0.28} distance={15} color="#fff8f0" />
+
+      {/* IMPORTANT: render segments using segIndex so images progress */}
+      {Array.from({ length: POOL }, (_, i) => {
+        const idx = segIndex.current[i];
+        const left = images[(idx * 2) % images.length];
+        const right = images[(idx * 2 + 1) % images.length];
+
+        return (
+          <Segment
+            key={i}
+            z={pos.current[i]}
+            left={left}
+            right={right}
+            CW={CW}
+            CH={CH}
+            reducedMotion={reducedMotion}
+            setRef={(e) => (refs.current[i] = e)}
+          />
+        );
+      })}
+
+      <ResponsiveRig reducedMotion={reducedMotion} />
     </>
   );
 }
@@ -469,113 +610,256 @@ function Scene() {
 /* ================= PAGE ================= */
 
 export default function Page() {
+  const reducedMotion = usePrefersReducedMotion();
+
+  const [paused, setPaused] = useState(false);
+  const [speed, setSpeed] = useState(1);
+
+  const onTogglePause = useCallback(() => setPaused((p) => !p), []);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setPaused((p) => !p);
+      }
+    };
+    window.addEventListener("keydown", onKey, { passive: false });
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <>
       <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap");
+
+        :root {
+          --bg0: #f3f7ff;
+          --bg1: #eef3ff;
+          --glass: rgba(255, 255, 255, 0.58);
+          --stroke: rgba(255, 255, 255, 0.72);
+          --shadow: rgba(21, 31, 54, 0.18);
+          --text: #1a2a4a;
+          --muted: rgba(26, 42, 74, 0.72);
+        }
+
         * {
           margin: 0;
           padding: 0;
           box-sizing: border-box;
         }
-        
+
+        html,
         body {
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Display', sans-serif;
+          height: 100%;
+        }
+
+        body {
+          font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+            "SF Pro Display", system-ui, sans-serif;
           -webkit-font-smoothing: antialiased;
           -moz-osx-font-smoothing: grayscale;
           overflow: hidden;
+
+          background: radial-gradient(
+              1200px 700px at 10% 10%,
+              rgba(102, 126, 234, 0.18),
+              transparent 60%
+            ),
+            radial-gradient(
+              900px 600px at 90% 20%,
+              rgba(240, 147, 251, 0.16),
+              transparent 55%
+            ),
+            linear-gradient(135deg, var(--bg0), var(--bg1));
+        }
+
+        /* ===== Top navbar ===== */
+        .topNav {
+          position: fixed;
+          top: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 10;
+          width: min(760px, calc(100vw - 20px));
+          pointer-events: none;
+        }
+
+        .topNavCard {
+          pointer-events: auto;
+          border-radius: 18px;
+          padding: 12px 14px;
+          background: var(--glass);
+          border: 1px solid var(--stroke);
+          box-shadow: 0 18px 55px var(--shadow),
+            inset 0 1px 0 rgba(255, 255, 255, 0.55);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          text-align: center;
+        }
+
+        .navLogo {
+          width: 42px;
+          height: 42px;
+          object-fit: contain;
+          filter: drop-shadow(0 10px 22px rgba(21, 31, 54, 0.12));
+          flex: 0 0 auto;
+        }
+
+        .navTitle {
+          font-weight: 800;
+          letter-spacing: 0.34em;
+          text-transform: uppercase;
+          font-size: clamp(14px, 2.1vw, 18px);
+          background: linear-gradient(135deg, #667eea, #9a7cff, #f093fb);
+          background-size: 220% 220%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+        }
+
+        /* ===== Bottom controls ===== */
+        .bottomControls {
+          position: fixed;
+          bottom: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 10;
+          width: min(760px, calc(100vw - 20px));
+          pointer-events: none;
+        }
+
+        .bottomControlsCard {
+          pointer-events: auto;
+          border-radius: 18px;
+          padding: 12px 14px;
+          background: var(--glass);
+          border: 1px solid var(--stroke);
+          box-shadow: 0 18px 55px var(--shadow),
+            inset 0 1px 0 rgba(255, 255, 255, 0.55);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+
+          display: grid;
+          gap: 10px;
+        }
+
+        .btn {
+          border: 1px solid rgba(255, 255, 255, 0.65);
+          background: linear-gradient(
+            135deg,
+            rgba(102, 126, 234, 0.2),
+            rgba(240, 147, 251, 0.2)
+          );
+          color: var(--text);
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          padding: 10px 12px;
+          border-radius: 12px;
+          cursor: pointer;
+          box-shadow: 0 10px 26px rgba(21, 31, 54, 0.12);
+          justify-self: center;
+        }
+
+        .sliderRow {
+          display: grid;
+          gap: 8px;
+        }
+
+        .sliderMeta {
+          display: flex;
+          justify-content: space-between;
+          color: rgba(26, 42, 74, 0.78);
+          font-weight: 900;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          font-size: 11px;
+        }
+
+        .mono {
+          font-variant-numeric: tabular-nums;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+            "Liberation Mono", "Courier New", monospace;
+          letter-spacing: 0.06em;
+        }
+
+        .slider {
+          width: 100%;
+          accent-color: #9a7cff;
+        }
+
+        .hint {
+          color: rgba(26, 42, 74, 0.65);
+          font-weight: 650;
+          font-size: 12px;
+          line-height: 1.35;
+          text-align: center;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          * {
+            animation: none !important;
+            transition: none !important;
+            scroll-behavior: auto !important;
+          }
         }
       `}</style>
 
-      <main style={{ 
-        width: "100vw", 
-        height: "100vh", 
-        background: "linear-gradient(135deg, #f0f4f8 0%, #e8f0f8 100%)",
-        position: "fixed",
-        top: 0,
-        left: 0,
-        overflow: "hidden"
-      }}>
-        <Canvas 
+      <main style={{ width: "100vw", height: "100vh", position: "fixed", inset: 0 }}>
+        <Canvas
           camera={{ position: [0, 0.3, 2], fov: 68 }}
           shadows
-          gl={{ 
+          dpr={[1, 2]}
+          gl={{
             antialias: true,
             toneMapping: THREE.ACESFilmicToneMapping,
-            toneMappingExposure: 1.2
+            toneMappingExposure: 1.18,
+            powerPreference: "high-performance",
           }}
           style={{ width: "100%", height: "100%" }}
         >
-          <Scene />
+          <Scene reducedMotion={reducedMotion} paused={paused} speed={speed} />
         </Canvas>
 
-        {/* Compact overlay UI */}
+        <TopNav />
+
+        <BottomControls
+          reducedMotion={reducedMotion}
+          paused={paused}
+          onTogglePause={onTogglePause}
+          speed={speed}
+          setSpeed={(v) => setSpeed(clamp(v, 0.25, 2))}
+        />
+
+        {/* Vignette */}
         <div
           style={{
             position: "fixed",
-            top: "20px",
-            left: "50%",
-            transform: "translateX(-50%)",
+            inset: 0,
             pointerEvents: "none",
-            zIndex: 10,
-            textAlign: "center",
+            background:
+              "radial-gradient(circle at center, rgba(255,255,255,0) 0%, rgba(8,14,28,0.05) 100%)",
+            mixBlendMode: "multiply",
           }}
-        >
-          {/* Logo */}
-          <img 
-            src="/images/logo.png" 
-            style={{ 
-              width: window.innerWidth < 768 ? "45px" : "55px", 
-              marginBottom: window.innerWidth < 768 ? "8px" : "10px",
-              display: "block",
-              margin: `0 auto ${window.innerWidth < 768 ? "8px" : "10px"}`,
-            }} 
-            alt="Ritual Net Logo"
-          />
-          
-          {/* Title */}
-          <h1 
-            style={{ 
-              letterSpacing: window.innerWidth < 768 ? ".28em" : ".35em", 
-              fontWeight: 300,
-              margin: "0 0 6px 0",
-              fontSize: window.innerWidth < 768 ? "1.2rem" : "1.5rem",
-              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
-              textTransform: "uppercase",
-              fontFamily: "'Inter', -apple-system, 'SF Pro Display', sans-serif",
-              filter: "drop-shadow(0 1px 4px rgba(102, 126, 234, 0.2))",
-            }}
-          >
-            RITUAL NET
-          </h1>
-          
-          {/* Subtitle */}
-          <p 
-            style={{ 
-              fontSize: window.innerWidth < 768 ? "9px" : "10px", 
-              letterSpacing: window.innerWidth < 768 ? ".18em" : ".22em",
-              color: "#5a6a8a",
-              fontWeight: 500,
-              margin: 0,
-              fontFamily: "'Inter', -apple-system, 'SF Pro Display', sans-serif",
-              textShadow: "0 1px 4px rgba(255, 255, 255, 0.6)",
-            }}
-          >
-            Sovereign AI Corridor
-          </p>
-        </div>
+        />
 
-        {/* Elegant vignette overlay */}
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          pointerEvents: "none",
-          background: "radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.03) 100%)"
-        }} />
+        {/* Grain */}
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            pointerEvents: "none",
+            opacity: 0.06,
+            backgroundImage:
+              'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'180\' height=\'180\'%3E%3Cfilter id=\'n\'%3E%3CfeTurbulence type=\'fractalNoise\' baseFrequency=\'.9\' numOctaves=\'2\' stitchTiles=\'stitch\'/%3E%3C/filter%3E%3Crect width=\'180\' height=\'180\' filter=\'url(%23n)\' opacity=\'.35\'/%3E%3C/svg%3E")',
+          }}
+        />
       </main>
     </>
   );
